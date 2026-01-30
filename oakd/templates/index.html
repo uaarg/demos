@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Camera Measurement Tool</title>
+    <style>
+        video, canvas {
+            border: 1px solid black;
+            max-width: 100%;
+        }
+    </style>
+</head>
+<body>
+
+<h2>OAK-D Web Demo!</h2>
+
+<p>
+    To use this, first press "Capture", then click on 2 points in the image and press "Measure".
+</p>
+
+<button onclick="capture()">Capture</button>
+<br><br>
+<canvas id="canvas"></canvas><br><br>
+<button onclick="measure()">Measure</button>
+
+<p id="result"></p>
+
+<script>
+let canvas = document.getElementById("canvas");
+let ctx = canvas.getContext("2d");
+
+let points = [];
+
+// Capture image
+async function capture() {
+    const res = await fetch("/capture?id=" + Date.now().valueOf());
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+
+    const image = new Image();
+    image.onload = () => {
+        canvas.width = image.width;
+        canvas.height = image.height;
+        ctx.drawImage(image, 0, 0);
+    };
+    image.src = url;
+
+    points = [];
+}
+
+// Click to select points
+canvas.addEventListener("click", function(event) {
+    if (points.length >= 2) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.round(event.clientX - rect.left);
+    const y = Math.round(event.clientY - rect.top);
+
+    points.push({ x, y });
+
+    ctx.fillStyle = "red";
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fill();
+});
+
+// Measure distance
+function measure() {
+    if (points.length !== 2) {
+        alert("Select exactly 2 points");
+        return;
+    }
+
+    fetch("/measure", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            p1: points[0],
+            p2: points[1]
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        document.getElementById("result").innerText =
+            "Distance: " + data.distance.toFixed(2) + " mm";
+
+        points = [];
+    });
+}
+</script>
+
+</body>
+</html>
