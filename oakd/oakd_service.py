@@ -1,5 +1,6 @@
-# Service class wrapper. Can be run on it's own (see the if __name__ == "__main__" below).
-# Handwritten by Aidan Olsen
+#!/usr/bin/env python3
+# Refactored to DepthAI V3
+# Original v2 code by Aidan Olsen
 
 from dataclasses import dataclass
 import numpy as np
@@ -7,6 +8,9 @@ import depthai as dai
 import cv2
 
 
+# -------------------------------
+# Capture data container
+# -------------------------------
 @dataclass
 class Capture:
     rgb: np.ndarray
@@ -15,110 +19,127 @@ class Capture:
     height: int
 
     def get_point(self, x: int, y: int) -> np.ndarray:
-        """Get the 3D coordinates relative to the camera frame (in mm) of a pixel).
-
-        (x, y) are in pixel coordinates in the self.rgb frame."""
+        """Get the 3D coordinates (mm) of a pixel in the RGB frame."""
         idx = y * self.width + x
         p = self.point_cloud[idx]
 
-        # I am not sure if this is possible...
         assert not np.any(np.isnan(p)), "Invalid depth at this point"
-
         return p
 
-    def distance_between_points(self, x1: int, y1: int, x2: int, y2: int):
-        """Get the physical distance between points from pixels in the rgb
-        frame (x1, y1) and (x2, y2).
-
-        Resulting distance is in mm."""
+    def distance_between_points(
+        self, x1: int, y1: int, x2: int, y2: int
+    ) -> float:
+        """Euclidean distance between two RGB pixels (mm)."""
         p1 = self.get_point(x1, y1)
         p2 = self.get_point(x2, y2)
-
-        dist = np.linalg.norm(p1 - p2)
-
-        return dist
+        return np.linalg.norm(p1 - p2)
 
 
+# -------------------------------
+# OAK-D service (V3)
+# -------------------------------
 class OakdService:
-    """Manages an OAK-D device with on-demand capturing of 3D pictures (see Capture)."""
+    """Manages an OAK-D device with on-demand 3D captures (DepthAI V3)."""
 
     def __init__(self, fps: int = 30):
-        self._init_pipeline(fps)
+        self.fps = fps
+        self._init_pipeline()
+        self.running = False
 
-    def _init_pipeline(self, fps: int):
-        """Initialize the Depth AI pipeline (will be run on the OAK-D)"""
-        pipeline = dai.Pipeline()
+    def _init_pipeline(self):
+        self.pipeline = dai.Pipeline()
 
-        camRgb = pipeline.create(dai.node.ColorCamera)
-        monoLeft = pipeline.create(dai.node.MonoCamera)
-        monoRight = pipeline.create(dai.node.MonoCamera)
-        depth = pipeline.create(dai.node.StereoDepth)
-        pointcloud = pipeline.create(dai.node.PointCloud)
-        sync = pipeline.create(dai.node.Sync)
-        xOut = pipeline.create(dai.node.XLinkOut)
+        # RGB camera (unchanged in V3)
+        self.camRgb = self.pipeline.create(dai.node.ColorCamera)
+        self.camRgb.setBoardSocket(dai.CameraBoardSocket.CAM_A)
+        self.camRgb.setResolution(
+            dai.ColorCameraProperties.SensorResolution.THE_1080_P
+        )
+        self.camRgb.setIspScale(1, 3)
+        self.camRgb.setFps(self.fps)
 
-        camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
-        camRgb.setBoardSocket(dai.CameraBoardSocket.CAM_A)
-        camRgb.setIspScale(1, 3)
-        camRgb.setFps(fps)
+        # Mono cameras (V3 Camera node)
+        self.monoLeft = (
+            self.pipeline.create(dai.node.Camera)
+            .build(dai.CameraBoardSocket.CAM_B)
+        )
+        self.monoRight = (
+            self.pipeline.create(dai.node.Camera)
+            .build(dai.CameraBoardSocket.CAM_C)
+        )
 
-        monoLeft.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
-        monoLeft.setCamera("left")
-        monoLeft.setFps(fps)
+        # Stereo depth + point cloud
+        self.stereo = self.pipeline.create(dai.node.StereoDepth)
+        self.pointcloud = self.pipeline.create(dai.node.PointCloud)
 
-        monoRight.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
-        monoRight.setCamera("right")
-        monoRight.setFps(fps)
+        self.stereo.setDefaultProfilePreset(
+            dai.node.StereoDepth.PresetMode.HIGH_DETAIL
+        )
+        self.stereo.setLeftRightCheck(True)
+        self.stereo.setSubpixel(True)
+        self.stereo.setDepthAlign(dai.CameraBoardSocket.CAM_A)
 
-        depth.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.HIGH_DENSITY)
-        depth.setLeftRightCheck(True)
-        depth.setSubpixel(True)
-        depth.setDepthAlign(dai.CameraBoardSocket.CAM_A)
+        # Linking
+        self.monoLeft.requestFullResolutionOutput().link(self.stereo.left)
+        self.monoRight.requestFullResolutionOutput().link(self.stereo.right)
+        self.stereo.depth.link(self.pointcloud.inputDepth)
 
-        monoLeft.out.link(depth.left)
-        monoRight.out.link(depth.right)
-        depth.depth.link(pointcloud.inputDepth)
-
-        camRgb.isp.link(sync.inputs["rgb"])
-        pointcloud.outputPointCloud.link(sync.inputs["pcl"])
-
-        sync.out.link(xOut.input)
-        xOut.setStreamName("out")
-
-        self.pipeline = pipeline
-
-    def capture(self) -> Capture | None:
-        """Capture a current 3D frame on the OAK-D.
-
-        NOTE: .start() must have been called first. If it has not, this will only return None."""
-        if not self.device or self.device.isClosed():
-            return None
-
-        msg = self.queue.get()
-        rgbFrame = msg["rgb"]
-        cv_frame = rgbFrame.getCvFrame()
-        rgb_frame = cv2.cvtColor(cv_frame, cv2.COLOR_BGR2RGB)
-        rgb = np.array(rgb_frame)
-        pcl = msg["pcl"]
-
-        point_cloud = pcl.getPoints().astype(np.float64)
-        height, width, _ = rgb.shape
-
-        capture = Capture(rgb, point_cloud, width, height)
-        return capture
+        # Output queues (V3 style)
+        self.rgbQueue = self.camRgb.isp.createOutputQueue(
+            maxSize=2, blocking=False
+        )
+        self.pclQueue = self.pointcloud.outputPointCloud.createOutputQueue(
+            maxSize=2, blocking=False
+        )
 
     def start(self):
-        """Start the depth-perception process on the OAK-D"""
-        print("Starting OAK-D Connection")
-        self.device = dai.Device(self.pipeline)
-        self.queue = self.device.getOutputQueue("out", maxSize=1, blocking=False)
+        """Start the pipeline."""
+        if self.running:
+            return
+
+        print("Starting OAK-D pipeline (V3)")
+        self.pipeline.start()
+        self.running = True
 
     def stop(self):
-        """Stop the depth-perception process"""
-        self.device.close()
-        self.queue = None
+        """Stop the pipeline."""
+        if not self.running:
+            return
+
+        print("Stopping OAK-D pipeline")
+        self.pipeline.stop()
+        self.running = False
+
+    def capture(self) -> Capture | None:
+        """Capture a single RGB + point cloud frame."""
+        if not self.running:
+            return None
+
+        rgbMsg = self.rgbQueue.get()
+        pclMsg = self.pclQueue.tryGet()
+
+        if pclMsg is None:
+            return None
+
+        # RGB
+        cv_frame = rgbMsg.getCvFrame()
+        rgb = cv2.cvtColor(cv_frame, cv2.COLOR_BGR2RGB)
+
+        # Point cloud
+        point_cloud = pclMsg.getPoints().astype(np.float64)
+        height, width, _ = rgb.shape
+
+        return Capture(
+            rgb=rgb,
+            point_cloud=point_cloud,
+            width=width,
+            height=height,
+        )
 
 
+# -------------------------------
+# Standalone run
+# -------------------------------
 if __name__ == "__main__":
     service = OakdService()
     service.start()
@@ -132,17 +153,22 @@ if __name__ == "__main__":
         print("Capturing")
         capture = service.capture()
 
+        if capture is None:
+            print("No capture available")
+            continue
+
         x1, y1 = 100, 100
-        print("point 1", (x1, y1), capture.get_point(x1, y1))
-
         x2, y2 = 200, 200
-        print("point 2", (x2, y2), capture.get_point(x2, y2))
 
-        print("distance", capture.distance_between_points(x1, y1, x2, y2))
+        print("Point 1:", capture.get_point(x1, y1))
+        print("Point 2:", capture.get_point(x2, y2))
+        print(
+            "Distance (mm):",
+            capture.distance_between_points(x1, y1, x2, y2),
+        )
 
         time.sleep(0.1)
 
-    print("stopping")
     service.stop()
-
     print("bye!")
+
