@@ -7,8 +7,17 @@
 from flask import Flask, render_template, request, jsonify, send_file
 from PIL import Image
 import io
+import os
 
 from oakd_service import OakdService
+
+os.makedirs("tmp/log", exist_ok=True)
+dirs = os.listdir("tmp/log")
+run_num = len(dirs)
+os.makedirs(f"tmp/log/{run_num}")
+base_dir = f"tmp/log/{run_num}"
+
+pic_num = 0
 
 oakd_service = OakdService()
 oakd_service.start()
@@ -28,6 +37,10 @@ def capture():
     global latest_image
 
     latest_image = oakd_service.capture()
+    if latest_image != None:
+        global pic_num
+        latest_image.save(os.path.join(base_dir, f"{pic_num}"))
+        pic_num += 1
     im = Image.fromarray(latest_image.rgb)
     jpeg_io = io.BytesIO()
     im.save(jpeg_io, format="JPEG")

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import numpy as np
 import depthai as dai
 import cv2
+import json
 
 
 # -------------------------------
@@ -33,6 +34,17 @@ class Capture:
         p1 = self.get_point(x1, y1)
         p2 = self.get_point(x2, y2)
         return np.linalg.norm(p1 - p2)
+    
+    def save(self, filename):
+        a = {
+            "rgb": self.rgb.tolist(),
+            "point_cloud": self.point_cloud.tolist(),
+            "width": self.width,
+            "height": self.height
+        }
+        s = json.dumps(a)
+        with open(filename, "w") as f:
+            f.write(s)
 
 
 # -------------------------------
@@ -129,12 +141,13 @@ class OakdService:
         point_cloud = pclMsg.getPoints().astype(np.float64)
         height, width, _ = rgb.shape
 
-        return Capture(
+        c = Capture(
             rgb=rgb,
             point_cloud=point_cloud,
             width=width,
             height=height,
         )
+        return c
 
 
 # -------------------------------
