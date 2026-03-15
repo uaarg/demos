@@ -19,19 +19,58 @@
 
 <button onclick="capture()">Capture</button>
 <br><br>
-<canvas id="canvas"></canvas><br><br>
-<button onclick="measure()">Measure</button>
+<div style="display: flex; gap: 20px;">
+    <div>
+        <h3>RGB Image</h3>
+        <canvas id="canvas"></canvas>
+    </div>
+    <div>
+        <h3>Depth Map</h3>
+        <canvas id="depth-canvas"></canvas>
+    </div>
+</div>
+<br>
+<button onclick="measure()">Measure (on RGB image)</button>
 
-<p id="result"></p>
+<div id="result-container" style="display: none; margin-top: 20px; padding: 10px; border: 1px solid #ccc;">
+    <p id="result-text"></p>
+    <label for="actual-distance">Actual distance (mm): </label>
+    <input type="number" id="actual-distance" step="0.1" />
+    <button onclick="calculateAccuracy()">Calculate Accuracy</button>
+    
+    <p id="accuracy-text"></p>
+    
+    <div id="save-section" style="display: none; margin-top: 15px;">
+        <label for="benchmark-comment">Comment (optional): </label><br>
+        <input type="text" id="benchmark-comment" style="width: 300px; margin-bottom: 10px;" /><br>
+        <button id="save-btn" onclick="saveBenchmark()">Save Benchmark</button>
+    </div>
+</div>
 
 <script>
 let canvas = document.getElementById("canvas");
 let ctx = canvas.getContext("2d");
 
+let depthCanvas = document.getElementById("depth-canvas");
+let depthCtx = depthCanvas.getContext("2d");
+
 let points = [];
+let calculatedDist = null;
+let currentAccuracy = null;
+let actualDist = null;
 
 // Capture image
 async function capture() {
+    // Hide results when capturing a new image
+    document.getElementById("result-container").style.display = "none";
+    document.getElementById("accuracy-text").innerText = "";
+    document.getElementById("save-section").style.display = "none";
+    document.getElementById("actual-distance").value = "";
+    document.getElementById("benchmark-comment").value = "";
+    calculatedDist = null;
+    actualDist = null;
+    currentAccuracy = null;
+
     const res = await fetch("/capture?id=" + Date.now().valueOf());
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
@@ -43,6 +82,23 @@ async function capture() {
         ctx.drawImage(image, 0, 0);
     };
     image.src = url;
+
+    // Fetch and display depth image
+    const depthRes = await fetch("/depth?id=" + Date.now().valueOf());
+    if (depthRes.ok) {
+        const depthBlob = await depthRes.blob();
+        const depthUrl = URL.createObjectURL(depthBlob);
+        
+        const depthImage = new Image();
+        depthImage.onload = () => {
+            depthCanvas.width = depthImage.width;
+            depthCanvas.height = depthImage.height;
+            depthCtx.drawImage(depthImage, 0, 0);
+        };
+        depthImage.src = depthUrl;
+    } else {
+        console.error("Failed to load depth image");
+    }
 
     points = [];
 }
@@ -80,10 +136,69 @@ function measure() {
     })
     .then(res => res.json())
     .then(data => {
-        document.getElementById("result").innerText =
-            "Distance: " + data.distance.toFixed(2) + " mm";
+        calculatedDist = data.distance;
+        document.getElementById("result-container").style.display = "block";
+        document.getElementById("result-text").innerText =
+            "Calculated Distance: " + data.distance.toFixed(2) + " mm";
+        document.getElementById("accuracy-text").innerText = "";
+        document.getElementById("save-section").style.display = "none";
+    });
+}
 
-        points = [];
+function calculateAccuracy() {
+    const actualInput = document.getElementById("actual-distance").value;
+    if (!actualInput || isNaN(actualInput)) {
+        alert("Please enter a valid actual distance in mm.");
+        return;
+    }
+    
+    actualDist = parseFloat(actualInput);
+    if (actualDist === 0) {
+        alert("Actual distance cannot be zero if we calculate percentage.");
+        return;
+    }
+
+    const error = Math.abs(actualDist - calculatedDist);
+    currentAccuracy = {
+        error_mm: error,
+        error_pct: (error / actualDist) * 100
+    };
+
+    document.getElementById("accuracy-text").innerText = 
+        `Error: ${currentAccuracy.error_mm.toFixed(2)} mm (${currentAccuracy.error_pct.toFixed(2)}%)`;
+    
+    document.getElementById("save-section").style.display = "block";
+}
+
+function saveBenchmark() {
+    fetch("/save", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            p1: points[0],
+            p2: points[1],
+            calculated: calculatedDist,
+            actual: actualDist,
+            accuracy: currentAccuracy,
+            comment: document.getElementById("benchmark-comment").value
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.status === "success") {
+            alert("Benchmark saved successfully!");
+            // Reset state
+            points = [];
+            document.getElementById("result-container").style.display = "none";
+            document.getElementById("actual-distance").value = "";
+            document.getElementById("benchmark-comment").value = "";
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // Optional logic depending on UX
+        } else {
+            alert("Error saving benchmark: " + (data.error || "Unknown"));
+        }
+    })
+    .catch(err => {
+        alert("Error saving: " + err);
     });
 }
 </script>
