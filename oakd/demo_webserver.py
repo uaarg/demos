@@ -28,6 +28,11 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/3d")
+def view_3d():
+    return render_template("3d_viewer.html")
+
+
 @app.route("/capture", methods=["GET"])
 def capture():
     global latest_image
@@ -93,6 +98,39 @@ def depth():
     return send_file(
         io.BytesIO(jpeg_io.getvalue()),
         mimetype='image/jpeg',
+    )
+
+
+@app.route("/pointcloud_data", methods=["GET"])
+def pointcloud_data():
+    global latest_image
+
+    if latest_image is None:
+        return jsonify({"error": "No image captured"}), 400
+
+    # The point cloud is of shape (N, 3) where N = width * height
+    points = latest_image.point_cloud
+    
+    # We also have the RGB image, shape (height, width, 3). Flatten it to (N, 3)
+    colors = latest_image.rgb.reshape(-1, 3)
+
+    # Filter out invalid points. A Z of <= 0 or NaN is invalid
+    z_coords = points[:, 2]
+    valid_mask = (z_coords > 0) & (~np.isnan(z_coords))
+
+    valid_points = points[valid_mask].astype(np.float32)
+    valid_colors = colors[valid_mask].astype(np.uint8)
+
+    # Convert arrays to raw bytes
+    points_bytes = valid_points.tobytes()
+    colors_bytes = valid_colors.tobytes()
+    
+    # Concatenate the buffers: floats first, then uint8s
+    final_buffer = points_bytes + colors_bytes
+
+    return send_file(
+        io.BytesIO(final_buffer),
+        mimetype='application/octet-stream',
     )
 
 
