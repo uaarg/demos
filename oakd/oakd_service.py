@@ -92,6 +92,7 @@ class OakdService:
 
         NOTE: .start() must have been called first. If it has not, this will only return None."""
         if not self.device or self.device.isClosed():
+            print("seems like device is still closed")
             return None
 
         msg = self.queue.get()

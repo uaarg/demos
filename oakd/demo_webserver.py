@@ -7,11 +7,16 @@
 from flask import Flask, render_template, request, jsonify, send_file
 from PIL import Image
 import io
+import json
+import base64
+import numpy as np
+import cv2
 
 from oakd_service import OakdService
 
 oakd_service = OakdService()
 oakd_service.start()
+print("start called here")
 
 app = Flask(__name__)
 
@@ -37,6 +42,61 @@ def capture():
     )
 
 
+@app.route("/depth", methods=["GET"])
+def depth():
+    global latest_image
+
+    if latest_image is None:
+        return jsonify({"error": "No image captured"}), 400
+
+    # Extract Z-coordinates (depth in mm) from the point cloud
+    # point_cloud is flat: (width * height, 3). We extract the Z column (index 2)
+    depth_z = latest_image.point_cloud[:, 2]
+
+    # Reshape it to 2D
+    depth_map = depth_z.reshape((latest_image.height, latest_image.width))
+
+    # Identify valid depth readings (ignoring exactly 0 or NaNs)
+    valid_mask = (depth_map > 0) & (~np.isnan(depth_map))
+
+    # Initialize a clean canvas for our colorized depth map
+    colorized_depth = np.zeros((latest_image.height, latest_image.width, 3), dtype=np.uint8)
+
+    if np.any(valid_mask):
+        # Determine the min and max depth for normalization
+        min_depth = np.min(depth_map[valid_mask])
+        max_depth = np.max(depth_map[valid_mask])
+        
+        # Avoid division by zero if all points are at the exact same distance
+        if max_depth > min_depth:
+            # Normalize the valid depths to 0-255 range (uint8)
+            # We invert it so closer objects are lighter/warmer
+            normalized_depth = ((max_depth - depth_map) / (max_depth - min_depth) * 255).astype(np.uint8)
+        else:
+            normalized_depth = np.full_like(depth_map, 128, dtype=np.uint8)
+
+        # Apply a colormap (JET is classic for depth map visualization: red=close, blue=far)
+        # We only apply it where we have valid data.
+        tmp_colored = cv2.applyColorMap(normalized_depth, cv2.COLORMAP_JET)
+        
+        # applyColorMap returns BGR, we need RGB for Pillow
+        tmp_colored = cv2.cvtColor(tmp_colored, cv2.COLOR_BGR2RGB)
+
+        # Map back only the valid pixels to our black canvas
+        colorized_depth[valid_mask] = tmp_colored[valid_mask]
+
+
+    # Convert to image and return as JPEG
+    im = Image.fromarray(colorized_depth)
+    jpeg_io = io.BytesIO()
+    im.save(jpeg_io, format="JPEG")
+    return send_file(
+        io.BytesIO(jpeg_io.getvalue()),
+        mimetype='image/jpeg',
+    )
+
+
+
 @app.route("/measure", methods=["POST"])
 def measure():
     p1 = request.json["p1"]
@@ -47,3 +107,38 @@ def measure():
     return jsonify({
         "distance": distance
     })
+
+@app.route("/save", methods=["POST"])
+def save():
+    data = request.json
+    
+    if latest_image is None:
+        return jsonify({"error": "No image captured"}), 400
+        
+    # Serialize image to base64 jpeg
+    im = Image.fromarray(latest_image.rgb)
+    jpeg_io = io.BytesIO()
+    im.save(jpeg_io, format="JPEG")
+    jpeg_b64 = base64.b64encode(jpeg_io.getvalue()).decode('ascii')
+    
+    # Serialize point cloud to base64 npz
+    npz_io = io.BytesIO()
+    np.savez_compressed(npz_io, point_cloud=latest_image.point_cloud)
+    npz_b64 = base64.b64encode(npz_io.getvalue()).decode('ascii')
+    
+    log_entry = {
+        "p1": data.get("p1"),
+        "p2": data.get("p2"),
+        "calculated_distance_mm": data.get("calculated"),
+        "actual_distance_mm": data.get("actual"),
+        "accuracy_pct": data.get("accuracy"),
+        "comment": data.get("comment", ""),
+        "image_jpeg_base64": jpeg_b64,
+        "point_cloud_npz_base64": npz_b64
+    }
+    
+    with open("benchmark_log.jsonl", "a") as f:
+        f.write(json.dumps(log_entry) + "\n")
+        
+    return jsonify({"status": "success"})
+
