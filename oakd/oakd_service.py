@@ -75,6 +75,11 @@ class OakdService:
         depth.setSubpixel(True)
         depth.setDepthAlign(dai.CameraBoardSocket.CAM_A)
 
+        # Enable built-in hardware temporal filter
+        config = depth.initialConfig.get()
+        config.postProcessing.temporalFilter.enable = True
+        depth.initialConfig.set(config)
+
         monoLeft.out.link(depth.left)
         monoRight.out.link(depth.right)
         depth.depth.link(pointcloud.inputDepth)
@@ -107,6 +112,61 @@ class OakdService:
 
         capture = Capture(rgb, point_cloud, width, height)
         return capture
+
+    def capture_burst(self, num_frames: int = 5) -> Capture | None:
+        """Capture multiple frames and average their valid depth points."""
+        if not self.device or self.device.isClosed():
+            print("seems like device is still closed")
+            return None
+
+        print(f"Starting burst capture of {num_frames} frames...")
+        # Flush the queue to ensure we get fresh frames from this moment
+        while self.queue.has():
+            self.queue.get()
+
+        rgb_frames = []
+        pcl_frames = []
+        
+        for i in range(num_frames):
+            msg = self.queue.get()
+            cv_frame = msg["rgb"].getCvFrame()
+            rgb = np.array(cv2.cvtColor(cv_frame, cv2.COLOR_BGR2RGB))
+            rgb_frames.append(rgb)
+            
+            pcl = msg["pcl"].getPoints().astype(np.float64)
+            pcl_frames.append(pcl)
+            print(f"Captured burst frame {i+1}/{num_frames}")
+
+        final_rgb = rgb_frames[-1]
+        height, width, _ = final_rgb.shape
+        
+        pcl_stack = np.stack(pcl_frames, axis=0) # shape: (num_frames, N, 3)
+        z_coords = pcl_stack[:, :, 2]
+        
+        # create mask of valid points (where Z > 0 and Z is not NaN)
+        valid_mask = (z_coords > 0) & (~np.isnan(z_coords)) # (num_frames, N)
+        valid_mask_expanded = np.expand_dims(valid_mask, axis=-1)
+        
+        # set invalid points to 0 to safely sum them up
+        valid_points = np.where(valid_mask_expanded, pcl_stack, 0.0)
+        sum_points = np.sum(valid_points, axis=0) # (N, 3)
+        
+        # count how many frames each pixel was valid in
+        valid_count = np.sum(valid_mask, axis=0) # (N,)
+        valid_count_expanded = np.expand_dims(valid_count, axis=-1)
+        
+        # avoid division by zero
+        safe_count = np.where(valid_count_expanded > 0, valid_count_expanded, 1)
+        
+        # average
+        avg_pcl = sum_points / safe_count
+        
+        # explicitly zero out pixels that had no valid frames
+        invalid_final_mask = (valid_count == 0)
+        avg_pcl[invalid_final_mask] = 0.0
+
+        print("Burst capture complete.")
+        return Capture(final_rgb, avg_pcl, width, height)
 
     def start(self):
         """Start the depth-perception process on the OAK-D"""

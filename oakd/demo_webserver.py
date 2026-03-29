@@ -37,7 +37,15 @@ def view_3d():
 def capture():
     global latest_image
 
-    latest_image = oakd_service.capture()
+    is_burst = request.args.get('burst', 'false').lower() == 'true'
+    burst_frames = int(request.args.get('frames', '5'))
+
+    if is_burst:
+        print(f"Webserver requested burst capture of {burst_frames} frames.")
+        latest_image = oakd_service.capture_burst(burst_frames)
+    else:
+        latest_image = oakd_service.capture()
+        
     im = Image.fromarray(latest_image.rgb)
     jpeg_io = io.BytesIO()
     im.save(jpeg_io, format="JPEG")
@@ -114,9 +122,11 @@ def pointcloud_data():
     # We also have the RGB image, shape (height, width, 3). Flatten it to (N, 3)
     colors = latest_image.rgb.reshape(-1, 3)
 
-    # Filter out invalid points. A Z of <= 0 or NaN is invalid
+    # Filter out invalid points. A Z of <= 0 or NaN is invalid.
+    # We also cap it at 15000mm (15 meters) because noisy extreme depths
+    # will cause the 3D bounding box to explode and push the camera too far back.
     z_coords = points[:, 2]
-    valid_mask = (z_coords > 0) & (~np.isnan(z_coords))
+    valid_mask = (z_coords > 0) & (z_coords < 15000) & (~np.isnan(z_coords))
 
     valid_points = points[valid_mask].astype(np.float32)
     valid_colors = colors[valid_mask].astype(np.uint8)

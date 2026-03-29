@@ -58,6 +58,11 @@ depth.setExtendedDisparity(False)
 depth.setSubpixel(True)
 depth.setDepthAlign(dai.CameraBoardSocket.CAM_A)
 
+# Enable built-in hardware temporal filter
+config = depth.initialConfig.get()
+config.postProcessing.temporalFilter.enable = True
+depth.initialConfig.set(config)
+
 monoLeft.out.link(depth.left)
 monoRight.out.link(depth.right)
 depth.depth.link(pointcloud.inputDepth)

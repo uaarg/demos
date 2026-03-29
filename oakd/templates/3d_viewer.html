@@ -35,15 +35,30 @@
             color: white;
             font-size: 24px;
         }
+        #capture-btn {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #28a745;
+            color: #fff;
+            padding: 12px 24px;
+            font-size: 18px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        #capture-btn:hover { background: #218838; }
     </style>
     <!-- Import maps polyfill -->
-    <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+    <script async src="/static/js/es-module-shims.js"></script>
 
     <script type="importmap">
       {
         "imports": {
-          "three": "https://unpkg.com/three@0.150.1/build/three.module.js",
-          "three/addons/": "https://unpkg.com/three@0.150.1/examples/jsm/"
+          "three": "/static/js/three.module.js",
+          "three/addons/": "/static/js/"
         }
       }
     </script>
@@ -57,8 +72,9 @@
         <p id="stats">Loading points...</p>
     </div>
     
-    <div id="loading">Loading Point Cloud Data...</div>
+    <div id="loading" style="display:none;">Loading Point Cloud Data...</div>
     <a href="/" id="back-btn">Back to 2D</a>
+    <button id="capture-btn">Capture New 3D Scene</button>
 
     <script type="module">
         import * as THREE from 'three';
@@ -68,7 +84,8 @@
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x111111);
 
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 100, 15000);
+        // Increase 'far' clipping plane to 100,000 to prevent distant point clouds from disappearing
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 10, 100000);
         // Start from a slight angle to immediately perceive depth
         camera.position.set(0, 0, -1000);
         camera.lookAt(0, 0, 500); // Look "forward" into the depth axis
@@ -86,9 +103,33 @@
         const axesHelper = new THREE.AxesHelper(1000);
         scene.add(axesHelper);
 
+        let currentPointCloud = null;
+
+        async function captureAndLoad() {
+            document.getElementById('loading').innerText = "Capturing from OAK-D...";
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('capture-btn').disabled = true;
+
+            try {
+                // First, trigger a capture
+                const captureRes = await fetch('/capture?id=' + Date.now().valueOf());
+                if (!captureRes.ok) throw new Error("Capture failed");
+
+                // Then load the point cloud
+                await loadPointCloud();
+            } catch (err) {
+                document.getElementById('loading').innerText = err.message;
+                console.error(err);
+            } finally {
+                document.getElementById('capture-btn').disabled = false;
+            }
+        }
+
         async function loadPointCloud() {
             try {
                 // Fetch the raw binary buffer
+                document.getElementById('loading').innerText = "Downloading Point Cloud...";
+                
                 const response = await fetch('/pointcloud_data?id=' + Date.now().valueOf());
                 if (!response.ok) {
                     throw new Error("Failed to fetch point cloud (perhaps no image captured yet?)");
@@ -133,13 +174,14 @@
 
                 // Material settings
                 const material = new THREE.PointsMaterial({
-                    size: 8.0,       // Size of individual points in pixels
+                    size: 3.0,       // Fix the size of points in screen-space pixels
                     vertexColors: true, 
-                    sizeAttenuation: true // Points further away appear smaller
+                    sizeAttenuation: false // Don't let them shrink to 0 size at a distance
                 });
 
-                const pointCloud = new THREE.Points(geometry, material);
-                scene.add(pointCloud);
+                if (currentPointCloud) scene.remove(currentPointCloud);
+                currentPointCloud = new THREE.Points(geometry, material);
+                scene.add(currentPointCloud);
 
                 // Move camera back to see the whole cloud
                 const maxDim = Math.max(
@@ -147,8 +189,12 @@
                     geometry.boundingBox.max.y - geometry.boundingBox.min.y,
                     geometry.boundingBox.max.z - geometry.boundingBox.min.z
                 );
-                camera.position.z = -maxDim * 0.8;
-                camera.position.y = maxDim * 0.2;
+                
+                // Fallback if maxDim goes wild
+                const safeMaxDim = Math.min(maxDim, 15000);
+                
+                camera.position.z = -safeMaxDim * 0.8;
+                camera.position.y = safeMaxDim * 0.2;
 
             } catch (err) {
                 document.getElementById('loading').innerText = err.message;
@@ -156,7 +202,13 @@
             }
         }
 
-        loadPointCloud();
+        // loadPointCloud(); // Don't auto-load in case they jumped straight here.
+        document.getElementById('capture-btn').addEventListener('click', captureAndLoad);
+
+        // Try to load any existing capture on page load, but don't show scary error if none
+        loadPointCloud().catch(() => {
+            document.getElementById('loading').style.display = 'none';
+        });
 
         // Handle window resizing
         window.addEventListener('resize', onWindowResize, false);

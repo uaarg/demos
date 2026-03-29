@@ -22,6 +22,12 @@
 </p>
 
 <button onclick="capture()">Capture</button>
+<label style="margin-left: 10px;">
+    <input type="checkbox" id="burst-mode"> Use Burst Mode
+</label>
+<label style="margin-left: 10px;">
+    Frames: <input type="number" id="burst-frames" value="5" min="2" max="50" style="width: 50px;">
+</label>
 <br><br>
 <div style="display: flex; gap: 20px;">
     <div>
@@ -75,7 +81,11 @@ async function capture() {
     actualDist = null;
     currentAccuracy = null;
 
-    const res = await fetch("/capture?id=" + Date.now().valueOf());
+    const isBurst = document.getElementById("burst-mode").checked;
+    const burstFrames = document.getElementById("burst-frames").value;
+
+    const captureUrl = `/capture?id=${Date.now().valueOf()}&burst=${isBurst}&frames=${burstFrames}`;
+    const res = await fetch(captureUrl);
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
 
