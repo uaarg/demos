@@ -351,8 +351,9 @@ async function runTestBench() {
     for(let i = 0; i < combos.length; i++) {
         let combo = combos[i];
         
-        if (i > 0) {
-            document.getElementById("test-bench-progress").innerText = `Breather: Cooling Hardware... Waiting 15s before starting config ${i + 1}/${combos.length}`;
+        const midPoint = Math.floor(combos.length / 2);
+        if (combos.length > 2 && i === midPoint && i > 0) {
+            document.getElementById("test-bench-progress").innerText = `Mid-Way Breather: Cooling Hardware... Waiting 15s before resuming configuration ${i + 1}/${combos.length}`;
             await new Promise(r => setTimeout(r, 15000));
         }
         
