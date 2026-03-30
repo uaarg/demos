@@ -75,9 +75,13 @@ class OakdService:
         depth.setSubpixel(True)
         depth.setDepthAlign(dai.CameraBoardSocket.CAM_A)
 
-        # Enable built-in hardware temporal filter
+        # Enable built-in hardware temporal and spatial filters
         config = depth.initialConfig.get()
         config.postProcessing.temporalFilter.enable = True
+        config.postProcessing.spatialFilter.enable = True
+        config.postProcessing.spatialFilter.holeFillingRadius = 2
+        config.postProcessing.spatialFilter.alpha = 0.5
+        config.postProcessing.spatialFilter.delta = 20
         depth.initialConfig.set(config)
 
         monoLeft.out.link(depth.left)
