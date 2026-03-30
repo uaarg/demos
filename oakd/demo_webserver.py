@@ -190,3 +190,37 @@ def save():
         
     return jsonify({"status": "success"})
 
+
+@app.route("/test_config", methods=["POST"])
+def test_config():
+    global latest_image
+    data = request.json
+    config = data.get("config", {})
+    p1 = data.get("p1")
+    p2 = data.get("p2")
+    actual = float(data.get("actual"))
+
+    # Restart pipeline with new config
+    oakd_service.restart(config)
+
+    # Capture
+    if config.get("burst_mode"):
+        latest_image = oakd_service.capture_burst(5)
+    else:
+        latest_image = oakd_service.capture()
+
+    if not latest_image:
+        return jsonify({"error": "Failed to capture image"}), 500
+
+    # Calculate difference
+    try:
+        calc_dist = latest_image.distance_between_points(int(p1["x"]), int(p1["y"]), int(p2["x"]), int(p2["y"]))
+        # cast back to standard float so jsonify doesn't choke on numpy types
+        calc_dist = float(calc_dist)
+        error = abs(calc_dist - actual)
+        return jsonify({
+            "calculated": calc_dist,
+            "error": error
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

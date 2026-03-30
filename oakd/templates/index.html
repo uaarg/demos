@@ -57,6 +57,51 @@
     </div>
 </div>
 
+<hr style="margin-top:30px;">
+<h2>Automated Test Bench</h2>
+<p>To use: Capture a base image above, click your 2 points, enter Actual Distance, then configure the tests below and click Run.</p>
+
+<div style="background: #f8f9fa; padding: 15px; border: 1px solid #ddd; max-width: 600px;">
+    <div style="margin-bottom: 8px;">
+        <b>Resolutions to test:</b>
+        <label style="margin-left: 10px;"><input type="checkbox" id="tb-res-400" checked> 400P</label>
+        <label style="margin-left: 10px;"><input type="checkbox" id="tb-res-800"> 800P</label>
+    </div>
+    <div style="margin-bottom: 8px;">
+        <b>Temporal Filter:</b>
+        <label style="margin-left: 20px;"><input type="checkbox" id="tb-temp-on" checked> ON</label>
+        <label style="margin-left: 10px;"><input type="checkbox" id="tb-temp-off" checked> OFF</label>
+    </div>
+    <div style="margin-bottom: 8px;">
+        <b>Spatial Filter:</b>
+        <label style="margin-left: 31px;"><input type="checkbox" id="tb-spat-on" checked> ON</label>
+        <label style="margin-left: 10px;"><input type="checkbox" id="tb-spat-off" checked> OFF</label>
+    </div>
+    <div style="margin-bottom: 8px;">
+        <b>Capture Mode:</b>
+        <label style="margin-left: 21px;"><input type="checkbox" id="tb-mode-single" checked> Single</label>
+        <label style="margin-left: 10px;"><input type="checkbox" id="tb-mode-burst" checked> Burst (5-Frames)</label>
+    </div>
+    <button onclick="runTestBench()" style="margin-top: 15px; padding: 10px 20px; font-weight: bold; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;">Run Automated Suite</button>
+</div>
+
+<div id="test-bench-progress" style="margin-top: 15px; font-weight: bold; color: #007bff;"></div>
+
+<table id="test-bench-results" border="1" cellpadding="8" style="margin-top: 20px; border-collapse: collapse; display: none; width: 100%; max-width: 800px; text-align: center;">
+    <thead style="background: #e9ecef;">
+        <tr>
+            <th>Rank</th>
+            <th>Resolution</th>
+            <th>Temporal</th>
+            <th>Spatial</th>
+            <th>Mode</th>
+            <th>Calculated (mm)</th>
+            <th>Error (mm)</th>
+        </tr>
+    </thead>
+    <tbody></tbody>
+</table>
+
 <script>
 let canvas = document.getElementById("canvas");
 let ctx = canvas.getContext("2d");
@@ -214,6 +259,116 @@ function saveBenchmark() {
     .catch(err => {
         alert("Error saving: " + err);
     });
+}
+
+async function runTestBench() {
+    if (points.length !== 2) {
+        alert("Please fully select 2 points on the RGB image above.");
+        return;
+    }
+    const actualInput = document.getElementById("actual-distance").value;
+    if (!actualInput || isNaN(actualInput)) {
+        alert("Please enter the 'Actual distance (mm)' in the section above before running the test bench.");
+        return;
+    }
+
+    const actual = parseFloat(actualInput);
+    
+    // Gather requested permutations
+    const resOpts = [];
+    if (document.getElementById("tb-res-400").checked) resOpts.push("400p");
+    if (document.getElementById("tb-res-800").checked) resOpts.push("800p");
+
+    const tempOpts = [];
+    if (document.getElementById("tb-temp-on").checked) tempOpts.push(true);
+    if (document.getElementById("tb-temp-off").checked) tempOpts.push(false);
+
+    const spatOpts = [];
+    if (document.getElementById("tb-spat-on").checked) spatOpts.push(true);
+    if (document.getElementById("tb-spat-off").checked) spatOpts.push(false);
+
+    const burstOpts = [];
+    if (document.getElementById("tb-mode-single").checked) burstOpts.push(false);
+    if (document.getElementById("tb-mode-burst").checked) burstOpts.push(true);
+
+    let combos = [];
+    resOpts.forEach(r => {
+        tempOpts.forEach(t => {
+            spatOpts.forEach(s => {
+                burstOpts.forEach(b => {
+                    combos.push({resolution: r, temporal_filter: t, spatial_filter: s, burst_mode: b});
+                });
+            });
+        });
+    });
+
+    if (combos.length === 0) {
+        alert("Please select at least one option in every category.");
+        return;
+    }
+
+    const tbody = document.querySelector("#test-bench-results tbody");
+    tbody.innerHTML = "";
+    document.getElementById("test-bench-results").style.display = "table";
+
+    let results = [];
+
+    for(let i = 0; i < combos.length; i++) {
+        let combo = combos[i];
+        document.getElementById("test-bench-progress").innerText = `Running configuration ${i + 1} of ${combos.length}... (Please wait, camera is restarting)`;
+        
+        try {
+            const response = await fetch("/test_config", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    config: combo,
+                    p1: points[0],
+                    p2: points[1],
+                    actual: actual
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.error !== undefined && !data.error_msg) {
+                combo.calculated = data.calculated;
+                combo.error = data.error;
+            } else {
+                combo.error = 9999;
+                console.error("Backend error:", data);
+            }
+        } catch (e) {
+            console.error(e);
+            combo.error = 9999;
+        }
+
+        results.push(combo);
+        results.sort((a,b) => a.error - b.error); // sort best first
+        
+        // Render
+        tbody.innerHTML = "";
+        results.forEach((res, index) => {
+            let tr = document.createElement("tr");
+            const isWinner = index === 0;
+            if (isWinner) tr.style.backgroundColor = "#d4edda";
+            
+            tr.innerHTML = `
+                <td><b>#${index + 1}</b></td>
+                <td>${res.resolution.toUpperCase()}</td>
+                <td>${res.temporal_filter ? '✅ ON' : '❌ OFF'}</td>
+                <td>${res.spatial_filter ? '✅ ON' : '❌ OFF'}</td>
+                <td>${res.burst_mode ? '🔥 Burst' : 'Single'}</td>
+                <td>${(res.calculated||0).toFixed(2)}</td>
+                <td style="font-weight:bold; color: ${res.error < 10 ? 'green' : (res.error === 9999 ? 'red' : 'inherit')};">
+                    ${res.error !== 9999 ? res.error.toFixed(2) : 'ERROR'}
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    document.getElementById("test-bench-progress").innerText = "✅ Suite Complete! The best configuration is highlighted in green.";
 }
 </script>
 

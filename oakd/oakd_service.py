@@ -42,10 +42,16 @@ class Capture:
 class OakdService:
     """Manages an OAK-D device with on-demand capturing of 3D pictures (see Capture)."""
 
-    def __init__(self, fps: int = 30):
-        self._init_pipeline(fps)
+    def __init__(self, fps: int = 30, config: dict = None):
+        self._init_pipeline(fps, config)
 
-    def _init_pipeline(self, fps: int):
+    def _init_pipeline(self, fps: int, config: dict = None):
+        if config is None:
+            config = {
+                "resolution": "400p",
+                "temporal_filter": True,
+                "spatial_filter": True
+            }
         """Initialize the Depth AI pipeline (will be run on the OAK-D)"""
         pipeline = dai.Pipeline()
 
@@ -62,11 +68,13 @@ class OakdService:
         camRgb.setIspScale(1, 3)
         camRgb.setFps(fps)
 
-        monoLeft.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
+        res = dai.MonoCameraProperties.SensorResolution.THE_800_P if config.get("resolution", "400p").lower() == "800p" else dai.MonoCameraProperties.SensorResolution.THE_400_P
+        
+        monoLeft.setResolution(res)
         monoLeft.setCamera("left")
         monoLeft.setFps(fps)
 
-        monoRight.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
+        monoRight.setResolution(res)
         monoRight.setCamera("right")
         monoRight.setFps(fps)
 
@@ -75,14 +83,27 @@ class OakdService:
         depth.setSubpixel(True)
         depth.setDepthAlign(dai.CameraBoardSocket.CAM_A)
 
-        # Enable built-in hardware temporal and spatial filters
-        config = depth.initialConfig.get()
-        config.postProcessing.temporalFilter.enable = True
-        config.postProcessing.spatialFilter.enable = True
-        config.postProcessing.spatialFilter.holeFillingRadius = 2
-        config.postProcessing.spatialFilter.alpha = 0.5
-        config.postProcessing.spatialFilter.delta = 20
-        depth.initialConfig.set(config)
+        # Configure hardware filters based on config dict
+        cfg = depth.initialConfig.get()
+        
+        if config.get("temporal_filter", True):
+            cfg.postProcessing.temporalFilter.enable = True
+        else:
+            cfg.postProcessing.temporalFilter.enable = False
+            
+        if config.get("spatial_filter", True):
+            cfg.postProcessing.spatialFilter.enable = True
+            cfg.postProcessing.spatialFilter.holeFillingRadius = 2
+            cfg.postProcessing.spatialFilter.alpha = 0.5
+            cfg.postProcessing.spatialFilter.delta = 20
+        else:
+            cfg.postProcessing.spatialFilter.enable = False
+            
+        # Add decimation if 800P + filters to save performance, else clear it
+        use_decimation = config.get("resolution", "400p").lower() == "800p" and (config.get("temporal_filter") or config.get("spatial_filter"))
+        cfg.postProcessing.decimationFilter.decimationFactor = 2 if use_decimation else 1
+            
+        depth.initialConfig.set(cfg)
 
         monoLeft.out.link(depth.left)
         monoRight.out.link(depth.right)
@@ -178,9 +199,22 @@ class OakdService:
         self.device = dai.Device(self.pipeline)
         self.queue = self.device.getOutputQueue("out", maxSize=1, blocking=False)
 
+    def restart(self, config: dict):
+        """Restart the pipeline with new configuration."""
+        print(f"Restarting OAK-D with config: {config}")
+        if hasattr(self, 'device') and self.device and not self.device.isClosed():
+            self.stop()
+            
+        self._init_pipeline(fps=30, config=config)
+        self.start()
+        
+        import time
+        time.sleep(1.5) # Allow sensors to settle
+        
     def stop(self):
         """Stop the depth-perception process"""
-        self.device.close()
+        if hasattr(self, 'device') and self.device:
+            self.device.close()
         self.queue = None
 
 
