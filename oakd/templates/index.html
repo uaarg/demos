@@ -82,7 +82,21 @@
         <label style="margin-left: 21px;"><input type="checkbox" id="tb-mode-single" checked> Single</label>
         <label style="margin-left: 10px;"><input type="checkbox" id="tb-mode-burst" checked> Burst (5-Frames)</label>
     </div>
+    <div style="margin-bottom: 8px;">
+        <b>Confidence Threshold:</b>
+        <label style="margin-left: 5px;"><input type="checkbox" id="tb-conf-normal" checked> Normal (245)</label>
+        <label style="margin-left: 10px;"><input type="checkbox" id="tb-conf-strict"> Strict (200)</label>
+    </div>
+    <div style="margin-bottom: 8px;">
+        <b>RANSAC Plane Math:</b>
+        <label style="margin-left: 8px;"><input type="checkbox" id="tb-ransac-off" checked> OFF</label>
+        <label style="margin-left: 10px;"><input type="checkbox" id="tb-ransac-on"> ON</label>
+    </div>
     <button onclick="runTestBench()" style="margin-top: 15px; padding: 10px 20px; font-weight: bold; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;">Run Automated Suite</button>
+</div>
+
+<div style="margin-top: 15px;">
+    <button id="save-suite-btn" onclick="saveSuite()" style="display: none; padding: 10px 20px; font-weight: bold; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">💾 Save Suite to CSV</button>
 </div>
 
 <div id="test-bench-progress" style="margin-top: 15px; font-weight: bold; color: #007bff;"></div>
@@ -95,6 +109,8 @@
             <th>Temporal</th>
             <th>Spatial</th>
             <th>Mode</th>
+            <th>Conf</th>
+            <th>RANSAC</th>
             <th>Calculated (mm)</th>
             <th>Error (mm)</th>
         </tr>
@@ -291,12 +307,31 @@ async function runTestBench() {
     if (document.getElementById("tb-mode-single").checked) burstOpts.push(false);
     if (document.getElementById("tb-mode-burst").checked) burstOpts.push(true);
 
+    const confOpts = [];
+    if (document.getElementById("tb-conf-normal").checked) confOpts.push(245);
+    if (document.getElementById("tb-conf-strict").checked) confOpts.push(200);
+
+    const ransacOpts = [];
+    if (document.getElementById("tb-ransac-off").checked) ransacOpts.push(false);
+    if (document.getElementById("tb-ransac-on").checked) ransacOpts.push(true);
+
     let combos = [];
     resOpts.forEach(r => {
         tempOpts.forEach(t => {
             spatOpts.forEach(s => {
                 burstOpts.forEach(b => {
-                    combos.push({resolution: r, temporal_filter: t, spatial_filter: s, burst_mode: b});
+                    confOpts.forEach(c => {
+                        ransacOpts.forEach(ran => {
+                            combos.push({
+                                resolution: r, 
+                                temporal_filter: t, 
+                                spatial_filter: s, 
+                                burst_mode: b,
+                                confidence: c,
+                                ransac: ran
+                            });
+                        });
+                    });
                 });
             });
         });
@@ -315,6 +350,12 @@ async function runTestBench() {
 
     for(let i = 0; i < combos.length; i++) {
         let combo = combos[i];
+        
+        if (i > 0) {
+            document.getElementById("test-bench-progress").innerText = `Breather: Cooling Hardware... Waiting 15s before starting config ${i + 1}/${combos.length}`;
+            await new Promise(r => setTimeout(r, 15000));
+        }
+        
         document.getElementById("test-bench-progress").innerText = `Running configuration ${i + 1} of ${combos.length}... (Please wait, camera is restarting)`;
         
         try {
@@ -359,6 +400,8 @@ async function runTestBench() {
                 <td>${res.temporal_filter ? '✅ ON' : '❌ OFF'}</td>
                 <td>${res.spatial_filter ? '✅ ON' : '❌ OFF'}</td>
                 <td>${res.burst_mode ? '🔥 Burst' : 'Single'}</td>
+                <td>${res.confidence}</td>
+                <td>${res.ransac ? '✅ ON' : '❌ OFF'}</td>
                 <td>${(res.calculated||0).toFixed(2)}</td>
                 <td style="font-weight:bold; color: ${res.error < 10 ? 'green' : (res.error === 9999 ? 'red' : 'inherit')};">
                     ${res.error !== 9999 ? res.error.toFixed(2) : 'ERROR'}
@@ -369,6 +412,29 @@ async function runTestBench() {
     }
 
     document.getElementById("test-bench-progress").innerText = "✅ Suite Complete! The best configuration is highlighted in green.";
+    window.lastSuiteResults = results;
+    document.getElementById("save-suite-btn").style.display = "inline-block";
+}
+
+async function saveSuite() {
+    if (!window.lastSuiteResults || window.lastSuiteResults.length === 0) return;
+    
+    try {
+        const res = await fetch("/save_suite", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({ results: window.lastSuiteResults })
+        });
+        const data = await res.json();
+        
+        if (data.status === "success") {
+            alert("Success! Test results exported to: " + data.filename);
+        } else {
+            alert("Error: " + data.error);
+        }
+    } catch(e) {
+        alert("Error saving: " + e);
+    }
 }
 </script>
 

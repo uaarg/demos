@@ -50,7 +50,8 @@ class OakdService:
             config = {
                 "resolution": "400p",
                 "temporal_filter": True,
-                "spatial_filter": True
+                "spatial_filter": True,
+                "confidence": 245
             }
         """Initialize the Depth AI pipeline (will be run on the OAK-D)"""
         pipeline = dai.Pipeline()
@@ -85,6 +86,8 @@ class OakdService:
 
         # Configure hardware filters based on config dict
         cfg = depth.initialConfig.get()
+        
+        cfg.costMatching.confidenceThreshold = config.get("confidence", 245)
         
         if config.get("temporal_filter", True):
             cfg.postProcessing.temporalFilter.enable = True

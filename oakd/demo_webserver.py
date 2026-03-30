@@ -3,6 +3,11 @@
 # Then visit http://localhost:8080
 #
 # Scaffolded with ChatGPT, then *heavily* hand edited.
+# Quick demo of a webserver driving the oakd_service.py
+# Run with: waitress-serve --host 127.0.0.1 demo_webserver:app
+# Then visit http://localhost:8080
+#
+# Scaffolded with ChatGPT, then *heavily* hand edited.
 
 from flask import Flask, render_template, request, jsonify, send_file
 from PIL import Image
@@ -11,6 +16,7 @@ import json
 import base64
 import numpy as np
 import cv2
+import open3d as o3d
 
 from oakd_service import OakdService
 
@@ -214,9 +220,39 @@ def test_config():
 
     # Calculate difference
     try:
-        calc_dist = latest_image.distance_between_points(int(p1["x"]), int(p1["y"]), int(p2["x"]), int(p2["y"]))
-        # cast back to standard float so jsonify doesn't choke on numpy types
-        calc_dist = float(calc_dist)
+        dist_calculated = False
+        if config.get("ransac", False):
+            try:
+                raw_pcd = latest_image.point_cloud
+                z_coords = raw_pcd[:, 2]
+                valid_mask = (z_coords > 0) & (z_coords < 15000) & (~np.isnan(z_coords))
+                valid_points = raw_pcd[valid_mask]
+                
+                if len(valid_points) > 100:
+                    pcd = o3d.geometry.PointCloud()
+                    pcd.points = o3d.utility.Vector3dVector(valid_points)
+                    plane_model, inliers = pcd.segment_plane(distance_threshold=10.0, ransac_n=3, num_iterations=1000)
+                    [a, b, c, d] = plane_model
+                    normal = np.array([a, b, c])
+                    
+                    pt1 = latest_image.get_point(int(p1["x"]), int(p1["y"]))
+                    pt2 = latest_image.get_point(int(p2["x"]), int(p2["y"]))
+                    
+                    dist1 = np.dot(pt1, normal) + d
+                    pt1_proj = pt1 - dist1 * normal
+                    
+                    dist2 = np.dot(pt2, normal) + d
+                    pt2_proj = pt2 - dist2 * normal
+                    
+                    calc_dist = float(np.linalg.norm(pt1_proj - pt2_proj))
+                    dist_calculated = True
+            except Exception as e:
+                print(f"RANSAC Failed: {e}")
+                
+        if not dist_calculated:
+            calc_dist = latest_image.distance_between_points(int(p1["x"]), int(p1["y"]), int(p2["x"]), int(p2["y"]))
+            calc_dist = float(calc_dist)
+            
         error = abs(calc_dist - actual)
         return jsonify({
             "calculated": calc_dist,
@@ -224,3 +260,26 @@ def test_config():
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route("/save_suite", methods=["POST"])
+def save_suite():
+    data = request.json
+    results = data.get("results", [])
+    if not results:
+        return jsonify({"error": "No results to save"}), 400
+        
+    import csv, os
+    from datetime import datetime
+    
+    filename = "test_bench_results_" + datetime.now().strftime("%Y%m%d_%H%M%S") + ".csv"
+    filepath = os.path.join(os.path.expanduser("~"), "Desktop", "demos", "oakd", filename)
+    
+    keys = ["resolution", "temporal_filter", "spatial_filter", "burst_mode", "confidence", "ransac", "calculated", "error"]
+    with open(filepath, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=keys)
+        writer.writeheader()
+        for r in results:
+            filtered_r = {k: r.get(k) for k in keys}
+            writer.writerow(filtered_r)
+            
+    return jsonify({"status": "success", "filename": filename})
