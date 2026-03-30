@@ -198,9 +198,20 @@ class OakdService:
 
     def start(self):
         """Start the depth-perception process on the OAK-D"""
-        print("Starting OAK-D Connection")
-        self.device = dai.Device(self.pipeline)
-        self.queue = self.device.getOutputQueue("out", maxSize=1, blocking=False)
+        print("Starting OAK-D Connection...")
+        try:
+            self.device = dai.Device(self.pipeline)
+            self.queue = self.device.getOutputQueue("out", maxSize=1, blocking=False)
+        except RuntimeError as e:
+            print("\n" + "="*50)
+            print("🚨 ERROR: Cannot find the OAK-D Camera!")
+            print("This usually happens if:")
+            print("  1. The camera is physically unplugged.")
+            print("  2. Another python script is already running and owns the camera.")
+            print("  3. The camera hardware hung from a previous ungraceful shutdown.")
+            print("\nFIX: Unplug the OAK-D USB cable and plug it back in, then try again.")
+            print("="*50 + "\n")
+            raise e
 
     def restart(self, config: dict):
         """Restart the pipeline with new configuration."""
