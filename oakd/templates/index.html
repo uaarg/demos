@@ -32,7 +32,7 @@
 <div style="display: flex; gap: 20px;">
     <div>
         <h3>RGB Image</h3>
-        <canvas id="canvas"></canvas>
+        <canvas id="canvas" tabindex="0" style="outline: none; cursor: crosshair;"></canvas>
     </div>
     <div>
         <h3>Depth Map</h3>
@@ -130,6 +130,34 @@ let calculatedDist = null;
 let currentAccuracy = null;
 let actualDist = null;
 
+let originalRGBImage = new Image();
+let lastMouseX = 0;
+let lastMouseY = 0;
+let showCrosshair = false;
+
+function redrawCanvas() {
+    if (!originalRGBImage.src) return;
+    ctx.drawImage(originalRGBImage, 0, 0);
+    
+    ctx.fillStyle = "red";
+    points.forEach(pt => {
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    if (showCrosshair && points.length < 2) {
+        ctx.strokeStyle = "lime";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(lastMouseX - 10, lastMouseY);
+        ctx.lineTo(lastMouseX + 10, lastMouseY);
+        ctx.moveTo(lastMouseX, lastMouseY - 10);
+        ctx.lineTo(lastMouseX, lastMouseY + 10);
+        ctx.stroke();
+    }
+}
+
 // Capture image
 async function capture() {
     // Hide results when capturing a new image
@@ -150,13 +178,13 @@ async function capture() {
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
 
-    const image = new Image();
-    image.onload = () => {
-        canvas.width = image.width;
-        canvas.height = image.height;
-        ctx.drawImage(image, 0, 0);
+    originalRGBImage = new Image();
+    originalRGBImage.onload = () => {
+        canvas.width = originalRGBImage.width;
+        canvas.height = originalRGBImage.height;
+        redrawCanvas();
     };
-    image.src = url;
+    originalRGBImage.src = url;
 
     // Fetch and display depth image
     const depthRes = await fetch("/depth?id=" + Date.now().valueOf());
@@ -178,20 +206,58 @@ async function capture() {
     points = [];
 }
 
+// Auto-focus canvas on hover
+canvas.addEventListener("mouseenter", function() {
+    canvas.focus();
+    showCrosshair = true;
+});
+
+canvas.addEventListener("mouseleave", function() {
+    showCrosshair = false;
+    redrawCanvas();
+});
+
+canvas.addEventListener("mousemove", function(event) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    lastMouseX = (event.clientX - rect.left) * scaleX;
+    lastMouseY = (event.clientY - rect.top) * scaleY;
+    showCrosshair = true;
+    redrawCanvas();
+});
+
 // Click to select points
 canvas.addEventListener("click", function(event) {
     if (points.length >= 2) return;
+    points.push({ x: Math.round(lastMouseX), y: Math.round(lastMouseY) });
+    redrawCanvas();
+});
 
-    const rect = canvas.getBoundingClientRect();
-    const x = Math.round(event.clientX - rect.left);
-    const y = Math.round(event.clientY - rect.top);
+// Arrow keys to fine-tune the crosshair
+canvas.addEventListener("keydown", function(event) {
+    if (points.length >= 2) return;
+    
+    const key = event.key;
 
-    points.push({ x, y });
-
-    ctx.fillStyle = "red";
-    ctx.beginPath();
-    ctx.arc(x, y, 5, 0, Math.PI * 2);
-    ctx.fill();
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) {
+        event.preventDefault(); // Stop scrolling
+        
+        if (key === "ArrowUp") lastMouseY -= 1;
+        if (key === "ArrowDown") lastMouseY += 1;
+        if (key === "ArrowLeft") lastMouseX -= 1;
+        if (key === "ArrowRight") lastMouseX += 1;
+        
+        redrawCanvas();
+    }
+    
+    if (key === "Enter" || key === " ") {
+        event.preventDefault(); // Stop page scroll
+        
+        points.push({ x: Math.round(lastMouseX), y: Math.round(lastMouseY) });
+        redrawCanvas();
+    }
 });
 
 // Measure distance
