@@ -7,6 +7,113 @@
             border: 1px solid black;
             max-width: 100%;
         }
+        /* Sidebar Styles */
+        #sidebar {
+            position: fixed;
+            top: 0;
+            right: -450px;
+            width: 450px;
+            height: 100vh;
+            background: #f8f9fa;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.2);
+            transition: right 0.3s ease;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            overflow-y: hidden;
+        }
+        #sidebar.open {
+            right: 0;
+        }
+        #sidebar-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1001;
+            padding: 10px 15px;
+            background: #343a40;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: right 0.3s ease;
+        }
+        #sidebar-toggle.open {
+            right: 470px;
+        }
+        .sidebar-header {
+            padding: 20px;
+            background: #343a40;
+            color: white;
+            font-size: 1.2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .sidebar-tabs {
+            display: flex;
+            background: #e9ecef;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .sidebar-tab {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            cursor: pointer;
+            font-weight: bold;
+            color: #495057;
+        }
+        .sidebar-tab.active {
+            background: #fff;
+            border-bottom: 2px solid #007bff;
+            color: #007bff;
+        }
+        .sidebar-content {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            background: #fff;
+        }
+        .log-card {
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 15px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .log-card img {
+            width: 100%;
+            height: auto;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .csv-item {
+            padding: 10px;
+            border-bottom: 1px solid #dee2e6;
+            cursor: pointer;
+            color: #007bff;
+        }
+        .csv-item:hover {
+            background: #f1f3f5;
+        }
+        #csv-table-container {
+            margin-top: 15px;
+            overflow-x: auto;
+        }
+        #csv-table-container table {
+            width: 100%;
+            font-size: 0.85rem;
+            border-collapse: collapse;
+        }
+        #csv-table-container th, #csv-table-container td {
+            border: 1px solid #dee2e6;
+            padding: 4px;
+            text-align: center;
+        }
+        #csv-table-container th {
+            background: #e9ecef;
+        }
     </style>
 </head>
 <body>
@@ -503,6 +610,164 @@ async function saveSuite() {
         alert("Error saving: " + e);
     }
 }
+</script>
+
+<button id="sidebar-toggle" onclick="toggleSidebar()">☰ Data Logs</button>
+
+<div id="sidebar">
+    <div class="sidebar-header">
+        <span>Saved Data</span>
+        <button onclick="toggleSidebar()" style="background:none;border:none;color:white;cursor:pointer;font-size:1.2rem;">✖</button>
+    </div>
+    <div class="sidebar-tabs">
+        <div class="sidebar-tab active" id="tab-json" onclick="switchTab('json')">Benchmarks (JSON)</div>
+        <div class="sidebar-tab" id="tab-csv" onclick="switchTab('csv')">Test Suites (CSV)</div>
+    </div>
+    <div class="sidebar-content" id="sidebar-content-json">
+        <!-- JSON logs will go here -->
+        <p>Loading JSON logs...</p>
+    </div>
+    <div class="sidebar-content" id="sidebar-content-csv" style="display:none;">
+        <!-- CSV files will go here -->
+        <div id="csv-list"></div>
+        <div id="csv-table-container"></div>
+    </div>
+</div>
+
+<script>
+    function toggleSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const toggleBtn = document.getElementById('sidebar-toggle');
+        sidebar.classList.toggle('open');
+        toggleBtn.classList.toggle('open');
+        
+        if (sidebar.classList.contains('open')) {
+            // Load data when opening
+            if (document.getElementById('tab-json').classList.contains('active')) {
+                fetchJsonLogs();
+            } else {
+                fetchCsvList();
+            }
+        }
+    }
+
+    function switchTab(tab) {
+        document.getElementById('tab-json').classList.remove('active');
+        document.getElementById('tab-csv').classList.remove('active');
+        document.getElementById('sidebar-content-json').style.display = 'none';
+        document.getElementById('sidebar-content-csv').style.display = 'none';
+        
+        document.getElementById('tab-' + tab).classList.add('active');
+        document.getElementById('sidebar-content-' + tab).style.display = 'block';
+        
+        if (tab === 'json') {
+            fetchJsonLogs();
+        } else {
+            fetchCsvList();
+        }
+    }
+
+    async function fetchJsonLogs() {
+        const container = document.getElementById('sidebar-content-json');
+        container.innerHTML = '<p>Loading JSON logs...</p>';
+        try {
+            const res = await fetch('/api/logs/json');
+            const logs = await res.json();
+            
+            if (logs.length === 0) {
+                container.innerHTML = '<p>No benchmark logs found.</p>';
+                return;
+            }
+            
+            let html = '';
+            logs.forEach(log => {
+                const acc = log.accuracy_pct || {};
+                const errMm = acc.error_mm !== undefined ? parseFloat(acc.error_mm).toFixed(2) : '?';
+                const errPct = acc.error_pct !== undefined ? parseFloat(acc.error_pct).toFixed(2) : '?';
+                const comment = log.comment || 'No comment';
+                
+                html += `
+                    <div class="log-card">
+                        <strong>${comment}</strong><br>
+                        Calculated: ${parseFloat(log.calculated_distance_mm).toFixed(2)} mm<br>
+                        Actual: ${log.actual_distance_mm} mm<br>
+                        Error: <span style="color: ${acc.error_pct < 5 ? 'green' : 'red'};">${errMm} mm (${errPct}%)</span>
+                        ${log.image_jpeg_base64 ? `<img src="data:image/jpeg;base64,${log.image_jpeg_base64}" alt="Benchmark Image">` : ''}
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        } catch(e) {
+            container.innerHTML = '<p style="color:red;">Error loading logs: ' + e + '</p>';
+        }
+    }
+
+    async function fetchCsvList() {
+        const listContainer = document.getElementById('csv-list');
+        const tableContainer = document.getElementById('csv-table-container');
+        listContainer.innerHTML = '<p>Loading CSV suites...</p>';
+        tableContainer.innerHTML = ''; // clear table
+        
+        try {
+            const res = await fetch('/api/logs/csv');
+            const files = await res.json();
+            
+            if (files.length === 0) {
+                listContainer.innerHTML = '<p>No CSV files found.</p>';
+                return;
+            }
+            
+            let html = '';
+            files.forEach(file => {
+                html += `<div class="csv-item" onclick="fetchCsvFile('${file}')">📄 ${file}</div>`;
+            });
+            listContainer.innerHTML = html;
+        } catch(e) {
+            listContainer.innerHTML = '<p style="color:red;">Error loading CSV list: ' + e + '</p>';
+        }
+    }
+
+    async function fetchCsvFile(filename) {
+        const tableContainer = document.getElementById('csv-table-container');
+        tableContainer.innerHTML = '<p>Loading data...</p>';
+        try {
+            const res = await fetch('/api/logs/csv/' + filename);
+            const data = await res.json();
+            
+            if (data.error) {
+                tableContainer.innerHTML = '<p style="color:red;">' + data.error + '</p>';
+                return;
+            }
+            
+            let html = `<h4>${filename}</h4><table><thead><tr>`;
+            data.columns.forEach(col => {
+                html += `<th>${col}</th>`;
+            });
+            html += `</tr></thead><tbody>`;
+            
+            data.rows.forEach(row => {
+                html += `<tr>`;
+                data.columns.forEach(col => {
+                    let val = row[col];
+                    // Format numeric error column if possible
+                    if (col === 'error' && !isNaN(val) && val !== '') {
+                        let num = parseFloat(val);
+                        html += `<td style="font-weight:bold; color: ${num < 10 ? 'green' : 'red'};">${num.toFixed(2)}</td>`;
+                    } else if (col === 'calculated' && !isNaN(val) && val !== '') {
+                        html += `<td>${parseFloat(val).toFixed(2)}</td>`;
+                    } else {
+                        html += `<td>${val}</td>`;
+                    }
+                });
+                html += `</tr>`;
+            });
+            
+            html += `</tbody></table>`;
+            tableContainer.innerHTML = html;
+        } catch(e) {
+            tableContainer.innerHTML = '<p style="color:red;">Error loading CSV file: ' + e + '</p>';
+        }
+    }
 </script>
 
 </body>

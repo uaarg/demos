@@ -14,6 +14,7 @@ from PIL import Image
 import io
 import json
 import base64
+import os
 import numpy as np
 import cv2
 import open3d as o3d
@@ -283,3 +284,52 @@ def save_suite():
             writer.writerow(filtered_r)
             
     return jsonify({"status": "success", "filename": filename})
+
+
+@app.route("/api/logs/json", methods=["GET"])
+def get_json_logs():
+    logs = []
+    filepath = "benchmark_log.jsonl"
+    if os.path.exists(filepath):
+        with open(filepath, "r") as f:
+            for line in f:
+                try:
+                    entry = json.loads(line)
+                    # Remove the bulky point cloud data to save bandwidth
+                    if "point_cloud_npz_base64" in entry:
+                        del entry["point_cloud_npz_base64"]
+                    logs.append(entry)
+                except Exception:
+                    pass
+    logs.reverse() # Show newest first
+    return jsonify(logs)
+
+@app.route("/api/logs/csv", methods=["GET"])
+def get_csv_list():
+    import glob
+    dir_path = os.path.join(os.path.expanduser("~"), "Desktop", "demos", "oakd")
+    search_pattern = os.path.join(dir_path, "test_bench_results_*.csv")
+    files = glob.glob(search_pattern)
+    filenames = [os.path.basename(f) for f in files]
+    filenames.sort(reverse=True)
+    return jsonify(filenames)
+
+@app.route("/api/logs/csv/<filename>", methods=["GET"])
+def get_csv_file(filename):
+    if ".." in filename or "/" in filename:
+        return jsonify({"error": "Invalid filename"}), 400
+        
+    filepath = os.path.join(os.path.expanduser("~"), "Desktop", "demos", "oakd", filename)
+    if not os.path.exists(filepath):
+        return jsonify({"error": "File not found"}), 404
+        
+    import csv
+    rows = []
+    try:
+        with open(filepath, "r") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                rows.append(row)
+        return jsonify({"columns": reader.fieldnames, "rows": rows})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
