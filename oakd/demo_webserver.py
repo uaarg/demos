@@ -282,9 +282,14 @@ def get_log_pointcloud(log_idx):
         
     try:
         with open(filepath, "r") as f:
-            for i, line in enumerate(f):
-                if i == log_idx:
+            valid_idx = 0
+            for line in f:
+                try:
                     entry = json.loads(line)
+                except Exception:
+                    continue
+                    
+                if valid_idx == log_idx:
                     if "point_cloud_npz_base64" not in entry or "image_jpeg_base64" not in entry:
                         return jsonify({"error": "Missing 3D data"}), 400
                         
@@ -313,6 +318,7 @@ def get_log_pointcloud(log_idx):
                         io.BytesIO(final_buffer),
                         mimetype='application/octet-stream',
                     )
+                valid_idx += 1
             return jsonify({"error": "Index out of bounds"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -326,9 +332,14 @@ def load_log_to_measurement(log_idx):
         
     try:
         with open(filepath, "r") as f:
-            for i, line in enumerate(f):
-                if i == log_idx:
+            valid_idx = 0
+            for line in f:
+                try:
                     entry = json.loads(line)
+                except Exception:
+                    continue
+                    
+                if valid_idx == log_idx:
                     if "point_cloud_npz_base64" not in entry or "image_jpeg_base64" not in entry:
                         return jsonify({"error": "Missing 3D data"}), 400
                         
@@ -355,6 +366,7 @@ def load_log_to_measurement(log_idx):
                         io.BytesIO(jpeg_data),
                         mimetype='image/jpeg',
                     )
+                valid_idx += 1
             return jsonify({"error": "Index out of bounds"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
