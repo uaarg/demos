@@ -427,10 +427,24 @@
                 
                 <p id="accuracy-text" style="font-weight: bold; font-size: 1.1rem; margin-top: 20px;"></p>
                 
-                <div id="save-section" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border-color); display: flex; align-items: center;">
-                    <label for="benchmark-comment">Comment: </label>
-                    <input type="text" id="benchmark-comment" style="flex: 1; max-width: 400px; margin-right: 15px;" placeholder="Optional comment..." />
-                    <button id="save-btn" class="btn-success" onclick="saveBenchmark()">Save Benchmark</button>
+                <div id="save-section" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 15px;">
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <b>Texture:</b>
+                        <label><input type="radio" name="texture-level" value="textured" checked> Textured</label>
+                        <label><input type="radio" name="texture-level" value="less textured"> Less Textured</label>
+                        <label><input type="radio" name="texture-level" value="no textured"> No Textured</label>
+                    </div>
+                    
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <label for="perp-distance">Perpendicular Distance (m): </label>
+                        <input type="number" id="perp-distance" step="0.01" style="width: 150px;" placeholder="e.g. 1.5" />
+                    </div>
+                    
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <label for="benchmark-comment">Comment: </label>
+                        <input type="text" id="benchmark-comment" style="flex: 1; max-width: 400px;" placeholder="Optional comment..." />
+                        <button id="save-btn" class="btn-success" onclick="saveBenchmark()">Save Benchmark</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -726,6 +740,9 @@
     }
 
     function saveBenchmark() {
+        const textureLevel = document.querySelector('input[name="texture-level"]:checked').value;
+        const perpDist = document.getElementById("perp-distance").value;
+        
         fetch("/save", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
@@ -735,6 +752,8 @@
                 calculated: calculatedDist,
                 actual: actualDist,
                 accuracy: currentAccuracy,
+                texture: textureLevel,
+                perp_distance: perpDist ? parseFloat(perpDist) : null,
                 comment: document.getElementById("benchmark-comment").value
             })
         })
@@ -926,6 +945,8 @@
                 html += `
                     <div class="log-card">
                         <strong style="font-size: 1.1rem; color: var(--primary-color);">${comment}</strong><br><br>
+                        ${log.texture ? `Texture: <b>${log.texture}</b><br>` : ''}
+                        ${log.perp_distance_m !== undefined && log.perp_distance_m !== null ? `Perpendicular Distance: <b>${log.perp_distance_m} m</b><br>` : ''}
                         Calculated: ${parseFloat(log.calculated_distance_mm).toFixed(2)} mm<br>
                         Actual: ${log.actual_distance_mm} mm<br>
                         Error: <span style="color: ${color}; font-weight: bold;">${errMm} mm (${errPct}%)</span>
@@ -946,6 +967,7 @@
         document.getElementById("accuracy-text").innerText = "";
         document.getElementById("save-section").style.display = "none";
         document.getElementById("benchmark-comment").value = "";
+        document.getElementById("perp-distance").value = "";
         calculatedDist = null;
         currentAccuracy = null;
         points = [];

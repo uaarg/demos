@@ -187,6 +187,8 @@ def save():
         "calculated_distance_mm": data.get("calculated"),
         "actual_distance_mm": data.get("actual"),
         "accuracy_pct": data.get("accuracy"),
+        "texture": data.get("texture", ""),
+        "perp_distance_m": data.get("perp_distance"),
         "comment": data.get("comment", ""),
         "image_jpeg_base64": jpeg_b64,
         "point_cloud_npz_base64": npz_b64
