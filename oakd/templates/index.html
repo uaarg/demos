@@ -468,11 +468,6 @@
                     <label><input type="checkbox" id="tb-conf-normal" checked> Normal (245)</label>
                     <label><input type="checkbox" id="tb-conf-strict"> Strict (200)</label>
                 </div>
-                <div class="config-group">
-                    <b>RANSAC Plane</b>
-                    <label><input type="checkbox" id="tb-ransac-off" checked> OFF</label>
-                    <label><input type="checkbox" id="tb-ransac-on"> ON</label>
-                </div>
             </div>
 
             <button onclick="runTestBench()" class="btn-success" style="padding: 15px 30px; font-size: 1.1rem;">⚙️ Run Automated Suite</button>
@@ -488,7 +483,6 @@
                         <th>Spatial</th>
                         <th>Mode</th>
                         <th>Conf</th>
-                        <th>RANSAC</th>
                         <th>Calculated (mm)</th>
                         <th>Error (mm)</th>
                     </tr>
@@ -794,25 +788,18 @@
         if (document.getElementById("tb-conf-normal").checked) confOpts.push(245);
         if (document.getElementById("tb-conf-strict").checked) confOpts.push(200);
 
-        const ransacOpts = [];
-        if (document.getElementById("tb-ransac-off").checked) ransacOpts.push(false);
-        if (document.getElementById("tb-ransac-on").checked) ransacOpts.push(true);
-
         let combos = [];
         resOpts.forEach(r => {
             tempOpts.forEach(t => {
                 spatOpts.forEach(s => {
                     burstOpts.forEach(b => {
                         confOpts.forEach(c => {
-                            ransacOpts.forEach(ran => {
-                                combos.push({
-                                    resolution: r, 
-                                    temporal_filter: t, 
-                                    spatial_filter: s, 
-                                    burst_mode: b,
-                                    confidence: c,
-                                    ransac: ran
-                                });
+                            combos.push({
+                                resolution: r, 
+                                temporal_filter: t, 
+                                spatial_filter: s, 
+                                burst_mode: b,
+                                confidence: c
                             });
                         });
                     });
@@ -882,7 +869,6 @@
                     <td>${res.spatial_filter ? '✅ ON' : '❌ OFF'}</td>
                     <td>${res.burst_mode ? '🔥 Burst' : 'Single'}</td>
                     <td>${res.confidence}</td>
-                    <td>${res.ransac ? '✅ ON' : '❌ OFF'}</td>
                     <td>${(res.calculated||0).toFixed(2)}</td>
                     <td style="font-weight:bold; color: ${res.error < 10 ? 'var(--success-color)' : (res.error === 9999 ? '#ef4444' : 'inherit')};">
                         ${res.error !== 9999 ? res.error.toFixed(2) : 'ERROR'}

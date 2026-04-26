@@ -219,40 +219,9 @@ def test_config():
     if not latest_image:
         return jsonify({"error": "Failed to capture image"}), 500
 
-    # Calculate difference
     try:
-        dist_calculated = False
-        if config.get("ransac", False):
-            try:
-                raw_pcd = latest_image.point_cloud
-                z_coords = raw_pcd[:, 2]
-                valid_mask = (z_coords > 0) & (z_coords < 15000) & (~np.isnan(z_coords))
-                valid_points = raw_pcd[valid_mask]
-                
-                if len(valid_points) > 100:
-                    pcd = o3d.geometry.PointCloud()
-                    pcd.points = o3d.utility.Vector3dVector(valid_points)
-                    plane_model, inliers = pcd.segment_plane(distance_threshold=10.0, ransac_n=3, num_iterations=1000)
-                    [a, b, c, d] = plane_model
-                    normal = np.array([a, b, c])
-                    
-                    pt1 = latest_image.get_point(int(p1["x"]), int(p1["y"]))
-                    pt2 = latest_image.get_point(int(p2["x"]), int(p2["y"]))
-                    
-                    dist1 = np.dot(pt1, normal) + d
-                    pt1_proj = pt1 - dist1 * normal
-                    
-                    dist2 = np.dot(pt2, normal) + d
-                    pt2_proj = pt2 - dist2 * normal
-                    
-                    calc_dist = float(np.linalg.norm(pt1_proj - pt2_proj))
-                    dist_calculated = True
-            except Exception as e:
-                print(f"RANSAC Failed: {e}")
-                
-        if not dist_calculated:
-            calc_dist = latest_image.distance_between_points(int(p1["x"]), int(p1["y"]), int(p2["x"]), int(p2["y"]))
-            calc_dist = float(calc_dist)
+        calc_dist = latest_image.distance_between_points(int(p1["x"]), int(p1["y"]), int(p2["x"]), int(p2["y"]))
+        calc_dist = float(calc_dist)
             
         error = abs(calc_dist - actual)
         return jsonify({
@@ -275,7 +244,7 @@ def save_suite():
     filename = "test_bench_results_" + datetime.now().strftime("%Y%m%d_%H%M%S") + ".csv"
     filepath = os.path.join(os.path.expanduser("~"), "Desktop", "demos", "oakd", filename)
     
-    keys = ["resolution", "temporal_filter", "spatial_filter", "burst_mode", "confidence", "ransac", "calculated", "error"]
+    keys = ["resolution", "temporal_filter", "spatial_filter", "burst_mode", "confidence", "calculated", "error"]
     with open(filepath, 'w', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=keys)
         writer.writeheader()
