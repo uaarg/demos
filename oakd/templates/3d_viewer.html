@@ -163,7 +163,7 @@
 
                 // Since the OAK-D camera's Y axis faces down and Z axis faces forward, 
                 // we'll apply a rotation/scale to make it feel natural in standard 3D space.
-                geometry.scale(1, -1, -1);
+                geometry.scale(1, 1, -1);
                 
                 // Adjust geometry so it rotates around its center somewhat reasonably
                 geometry.computeBoundingBox();
