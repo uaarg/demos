@@ -87,8 +87,8 @@
         // Increase 'far' clipping plane to 100,000 to prevent distant point clouds from disappearing
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 10, 100000);
         // Start from a slight angle to immediately perceive depth
-        camera.position.set(0, 0, -1000);
-        camera.lookAt(0, 0, 500); // Look "forward" into the depth axis
+        camera.position.set(0, 0, 1000);
+        camera.lookAt(0, 0, 0); // Look at origin
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -163,7 +163,7 @@
 
                 // Since the OAK-D camera's Y axis faces down and Z axis faces forward, 
                 // we'll apply a rotation/scale to make it feel natural in standard 3D space.
-                geometry.scale(1, -1, 1);
+                geometry.scale(1, -1, -1);
                 
                 // Adjust geometry so it rotates around its center somewhat reasonably
                 geometry.computeBoundingBox();
@@ -194,7 +194,7 @@
                 // Fallback if maxDim goes wild
                 const safeMaxDim = Math.min(maxDim, 15000);
                 
-                camera.position.z = -safeMaxDim * 0.8;
+                camera.position.z = safeMaxDim * 0.8;
                 camera.position.y = safeMaxDim * 0.2;
 
             } catch (err) {
