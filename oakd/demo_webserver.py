@@ -317,6 +317,48 @@ def get_log_pointcloud(log_idx):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/logs/json/<int:log_idx>/load_measurement", methods=["POST"])
+def load_log_to_measurement(log_idx):
+    global latest_image
+    filepath = "benchmark_log.jsonl"
+    if not os.path.exists(filepath):
+        return jsonify({"error": "No logs"}), 404
+        
+    try:
+        with open(filepath, "r") as f:
+            for i, line in enumerate(f):
+                if i == log_idx:
+                    entry = json.loads(line)
+                    if "point_cloud_npz_base64" not in entry or "image_jpeg_base64" not in entry:
+                        return jsonify({"error": "Missing 3D data"}), 400
+                        
+                    import base64, io, numpy as np
+                    from PIL import Image
+                    from oakd_service import Capture
+                    
+                    npz_data = base64.b64decode(entry["point_cloud_npz_base64"])
+                    npz_io = io.BytesIO(npz_data)
+                    npz = np.load(npz_io)
+                    points = npz["point_cloud"]
+                    
+                    jpeg_data = base64.b64decode(entry["image_jpeg_base64"])
+                    jpeg_io = io.BytesIO(jpeg_data)
+                    im = Image.open(jpeg_io)
+                    rgb = np.array(im)
+                    width, height = im.size
+                    
+                    # Reconstruct Capture and set as global
+                    latest_image = Capture(rgb, points, width, height)
+                    
+                    # Return the image so the UI can draw it
+                    return send_file(
+                        io.BytesIO(jpeg_data),
+                        mimetype='image/jpeg',
+                    )
+            return jsonify({"error": "Index out of bounds"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/logs/csv", methods=["GET"])
 def get_csv_list():
     import glob

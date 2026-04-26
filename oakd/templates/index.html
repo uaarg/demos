@@ -931,12 +931,48 @@
                         Error: <span style="color: ${color}; font-weight: bold;">${errMm} mm (${errPct}%)</span>
                         ${log.image_jpeg_base64 ? `<img src="data:image/jpeg;base64,${log.image_jpeg_base64}" alt="Benchmark">` : ''}
                         ${log.log_idx !== undefined ? `<div style="margin-top: 15px;"><a href="/3d?log_idx=${log.log_idx}" target="_blank" class="btn-3d" style="display: inline-block; text-align: center; width: 100%;">View in 3D Space</a></div>` : ''}
+                        ${log.log_idx !== undefined ? `<div style="margin-top: 10px;"><button onclick="loadMeasurement(${log.log_idx})" class="btn-3d" style="width: 100%; background: var(--primary-color);">Measure Again in 2D</button></div>` : ''}
                     </div>
                 `;
             });
             container.innerHTML = html;
         } catch(e) {
             container.innerHTML = '<p style="color:#ef4444;">Error loading logs: ' + e + '</p>';
+        }
+    }
+    
+    async function loadMeasurement(idx) {
+        document.getElementById("result-container").style.display = "none";
+        document.getElementById("accuracy-text").innerText = "";
+        document.getElementById("save-section").style.display = "none";
+        document.getElementById("benchmark-comment").value = "";
+        calculatedDist = null;
+        currentAccuracy = null;
+        points = [];
+        
+        switchMainTab('measure'); // Switch back to first tab
+        
+        try {
+            const res = await fetch(`/api/logs/json/${idx}/load_measurement`, { method: "POST" });
+            if (!res.ok) throw new Error("Failed to load point cloud");
+            
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+
+            originalRGBImage = new Image();
+            originalRGBImage.onload = () => {
+                canvas.width = originalRGBImage.width;
+                canvas.height = originalRGBImage.height;
+                redrawCanvas();
+            };
+            originalRGBImage.src = url;
+            
+            // Clear depth canvas as we don't reconstruct it from the log
+            depthCtx.clearRect(0, 0, depthCanvas.width, depthCanvas.height);
+            
+            alert("Historical capture loaded successfully! You can now click two points to measure distance.");
+        } catch(e) {
+            alert("Error: " + e.message);
         }
     }
 
