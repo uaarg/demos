@@ -930,6 +930,7 @@
                         Actual: ${log.actual_distance_mm} mm<br>
                         Error: <span style="color: ${color}; font-weight: bold;">${errMm} mm (${errPct}%)</span>
                         ${log.image_jpeg_base64 ? `<img src="data:image/jpeg;base64,${log.image_jpeg_base64}" alt="Benchmark">` : ''}
+                        ${log.log_idx !== undefined ? `<div style="margin-top: 15px;"><a href="/3d?log_idx=${log.log_idx}" target="_blank" class="btn-3d" style="display: inline-block; text-align: center; width: 100%;">View in 3D Space</a></div>` : ''}
                     </div>
                 `;
             });

@@ -264,6 +264,7 @@ def get_json_logs():
             for line in f:
                 try:
                     entry = json.loads(line)
+                    entry["log_idx"] = len(logs)
                     # Remove the bulky point cloud data to save bandwidth
                     if "point_cloud_npz_base64" in entry:
                         del entry["point_cloud_npz_base64"]
@@ -272,6 +273,49 @@ def get_json_logs():
                     pass
     logs.reverse() # Show newest first
     return jsonify(logs)
+
+@app.route("/api/logs/json/<int:log_idx>/pointcloud_data", methods=["GET"])
+def get_log_pointcloud(log_idx):
+    filepath = "benchmark_log.jsonl"
+    if not os.path.exists(filepath):
+        return jsonify({"error": "No logs"}), 404
+        
+    try:
+        with open(filepath, "r") as f:
+            for i, line in enumerate(f):
+                if i == log_idx:
+                    entry = json.loads(line)
+                    if "point_cloud_npz_base64" not in entry or "image_jpeg_base64" not in entry:
+                        return jsonify({"error": "Missing 3D data"}), 400
+                        
+                    import base64, io, numpy as np
+                    from PIL import Image
+                    
+                    npz_data = base64.b64decode(entry["point_cloud_npz_base64"])
+                    npz_io = io.BytesIO(npz_data)
+                    npz = np.load(npz_io)
+                    points = npz["point_cloud"]
+                    
+                    jpeg_data = base64.b64decode(entry["image_jpeg_base64"])
+                    jpeg_io = io.BytesIO(jpeg_data)
+                    im = Image.open(jpeg_io)
+                    colors = np.array(im).reshape(-1, 3)
+                    
+                    z_coords = points[:, 2]
+                    valid_mask = (z_coords > 0) & (z_coords < 15000) & (~np.isnan(z_coords))
+                    
+                    valid_points = points[valid_mask].astype(np.float32)
+                    valid_colors = colors[valid_mask].astype(np.uint8)
+
+                    final_buffer = valid_points.tobytes() + valid_colors.tobytes()
+
+                    return send_file(
+                        io.BytesIO(final_buffer),
+                        mimetype='application/octet-stream',
+                    )
+            return jsonify({"error": "Index out of bounds"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/logs/csv", methods=["GET"])
 def get_csv_list():

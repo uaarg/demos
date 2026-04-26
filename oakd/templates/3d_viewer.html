@@ -125,12 +125,13 @@
             }
         }
 
-        async function loadPointCloud() {
+        async function loadPointCloud(endpoint = null) {
             try {
                 // Fetch the raw binary buffer
                 document.getElementById('loading').innerText = "Downloading Point Cloud...";
                 
-                const response = await fetch('/pointcloud_data?id=' + Date.now().valueOf());
+                const fetchUrl = endpoint || '/pointcloud_data?id=' + Date.now().valueOf();
+                const response = await fetch(fetchUrl);
                 if (!response.ok) {
                     throw new Error("Failed to fetch point cloud (perhaps no image captured yet?)");
                 }
@@ -206,9 +207,19 @@
         document.getElementById('capture-btn').addEventListener('click', captureAndLoad);
 
         // Try to load any existing capture on page load, but don't show scary error if none
-        loadPointCloud().catch(() => {
-            document.getElementById('loading').style.display = 'none';
-        });
+        const urlParams = new URLSearchParams(window.location.search);
+        const logIdx = urlParams.get('log_idx');
+        
+        if (logIdx !== null) {
+            document.getElementById('capture-btn').style.display = 'none'; // hide capture button for history logs
+            loadPointCloud(`/api/logs/json/${logIdx}/pointcloud_data`).catch(e => {
+                document.getElementById('loading').innerText = "Error loading history: " + e.message;
+            });
+        } else {
+            loadPointCloud().catch(() => {
+                document.getElementById('loading').style.display = 'none';
+            });
+        }
 
         // Handle window resizing
         window.addEventListener('resize', onWindowResize, false);
