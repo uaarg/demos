@@ -864,16 +864,22 @@
                 
                 if (data.error !== undefined && !data.error_msg) {
                     combo.calculated = data.calculated;
-                    combo.error = data.error;
+                    if (typeof data.error === 'number') {
+                        combo.error = data.error;
+                    } else {
+                        combo.error = 9999;
+                        combo.error_msg = data.error;
+                    }
                 } else {
                     combo.error = 9999;
                 }
             } catch (e) {
                 combo.error = 9999;
+                combo.error_msg = e.message;
             }
 
             results.push(combo);
-            results.sort((a,b) => a.error - b.error); 
+            results.sort((a,b) => a.error - b.error);
             
             tbody.innerHTML = "";
             results.forEach((res, index) => {
@@ -890,7 +896,7 @@
                     <td>${res.confidence}</td>
                     <td>${(res.calculated||0).toFixed(2)}</td>
                     <td style="font-weight:bold; color: ${res.error < 10 ? 'var(--success-color)' : (res.error === 9999 ? '#ef4444' : 'inherit')};">
-                        ${res.error !== 9999 ? res.error.toFixed(2) : 'ERROR'}
+                        ${res.error !== 9999 ? res.error.toFixed(2) : (res.error_msg || 'ERROR')}
                     </td>
                 `;
                 tbody.appendChild(tr);

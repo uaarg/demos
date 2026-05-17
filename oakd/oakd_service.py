@@ -218,6 +218,9 @@ class OakdService:
         print(f"Restarting OAK-D with config: {config}")
         if hasattr(self, 'device') and self.device and not self.device.isClosed():
             self.stop()
+            import time
+            print("Cooling down for 1 second to ensure USB handle is fully released...")
+            time.sleep(1.0)
             
         self._init_pipeline(fps=30, config=config)
         self.start()
